@@ -1,6 +1,6 @@
 {
     "name": "@ts-delight/switch-expr.macro",
-    "version": "1.0.0-alpha.1",
+    "version": "1.0.0-alpha.2",
     "description": "Zero-overhead type-safe expression-oriented alternative to javascript switch statements",
     "main": "switch-expr.macro.js",
     "types": "switch-expr.macro.d.ts",
