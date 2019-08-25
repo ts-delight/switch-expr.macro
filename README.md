@@ -7,7 +7,7 @@ An expression-oriented fluent alternative to javascript's switch-statement that 
 Source:
 
 ```js
-import Switch from 'switch-expr.macro';
+import Switch from '@ts-delight/switch-expr.macro';
 
 const isAllowed = Switch(userType)
   .case('employee', true)
@@ -42,7 +42,7 @@ Refer babel's [setup instructions](https://babeljs.io/setup) to learn how to set
 1. Install `babel-plugin-macros` and `switch-expr.macro`:
 
 ```js
-npm install --save-dev babel-plugin-macros switch-expr.macro
+npm install --save-dev babel-plugin-macros @ts-delight/switch-expr.macro
 ```
 
 2. Add babel-plugin-macros to .babelrc (if not already preset):
@@ -68,7 +68,7 @@ module.exports = {
 ```js
 // src/foo.js
 
-import Switch from 'switch-expr.macro';
+import Switch from '@ts-delight/switch-expr.macro';
 
 const isAllowed = Switch(userType)
     .case("employee", isEmployeeAllowed())
