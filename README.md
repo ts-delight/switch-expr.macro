@@ -7,17 +7,19 @@ An expression-oriented fluent alternative to javascript's switch-statement that 
 Source:
 
 ```js
+import Switch from 'switch-expr.macro';
+
 const isAllowed = Switch(userType)
-    .case("employee", true)
-    .else("customer", false)
-    .default(false)
-    .end();
+  .case('employee', true)
+  .else('customer', false)
+  .default(false)();
 ```
 
 Compiled output:
 
 ```js
-const isAllowed = userType === "employee" ? true : userType === "customer" ? false : false;
+const isAllowed =
+  userType === 'employee' ? true : userType === 'customer' ? false : false;
 ```
 
 ## Why ?
@@ -37,7 +39,7 @@ This utility is implemented as a [babel-macro](https://github.com/kentcdodds/bab
 
 Refer babel's [setup instructions](https://babeljs.io/setup) to learn how to setup your project to use [babel](https://babeljs.io) for compilation.
 
-1. Install `babel-plugin-macros` and `if-expr.macro`:
+1. Install `babel-plugin-macros` and `switch-expr.macro`:
 
 ```js
 npm install --save-dev babel-plugin-macros switch-expr.macro
@@ -53,24 +55,10 @@ module.exports = {
     // ... other presets
   ],
   plugins: [
-    'babel-plugin-macros'    // <-- REQUIRED
+    'babel-plugin-macros', // <-- REQUIRED
     // ... other plugins
   ],
 };
-```
-
-3. Import `if-expr.macro` in your code:
-
-```js
-// src/foo.js
-
-import If from switch-expr.macro';
-
-const isAllowed = Switch(userType)
-    .case("employee", true)
-    .else("customer", false)
-    .default(false)
-    .end();
 ```
 
 ## Features
@@ -80,13 +68,12 @@ const isAllowed = Switch(userType)
 ```js
 // src/foo.js
 
-import Switch from switch-expr.macro';
+import Switch from 'switch-expr.macro';
 
 const isAllowed = Switch(userType)
     .case("employee", isEmployeeAllowed())
     .else("customer", isCustomerAllowed())
-    .default(false)
-    .end();
+    .default(false)();
 
 // if userType is "employee" then isCustomerAllowed function will never be
 // executed
@@ -109,7 +96,7 @@ module.exports = {
     // ... other presets
   ],
   plugins: [
-    'babel-plugin-macros'
+    'babel-plugin-macros',
     // ... other plugins
   ],
 };
@@ -123,14 +110,14 @@ AFAIK, currently there is no workaround for feasible.
 
 ## Caveats
 
-Every Switch/case/default chain fluent must end with an `.end()` invocation without interruptions.
+Every Switch/case/default chain fluent must end with an terminating invocation without interruptions.
 
 For example:
 
 ```js
 const a = 10;
 const intermediate = Switch(a).case(1, 2);
-const result = intermediate.end();
+const result = intermediate();
 ```
 
 Above code will fail to compile.

@@ -21,9 +21,9 @@ test('Transformations', () => {
     exports.r3 = r3;
 
     const r4 = function () {
-      const _switchTarget$1 = 2 + fn(10);
+      const _switchTarget$ = 2 + fn(10);
 
-      return _switchTarget$1 === 12 ? fn(20) : 10;
+      return _switchTarget$ === 12 ? fn(20) : 10;
     }();
 
     exports.r4 = r4;

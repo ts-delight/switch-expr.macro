@@ -1,12 +1,14 @@
 const { createMacro, MacroError } = require('babel-plugin-macros');
-const { once, uniqueId } = require('lodash');
-const traverse = require('@babel/traverse').default;
-const debug = require('debug')('switch-expr.macro');
+const pkgName = 'switch-expr.macro';
+const debug = require('debug')(pkgName);
 
 const SwitchExpr = ({ references, state, babel }) => {
-  debug('state:', state.file.ast);
+  debug('Initial state:', state);
 
+  // Utilities to help with ast construction
   const t = babel.types;
+  // Complete source code if file
+  const { code } = state.file;
   const refKeys = Object.keys(references);
   const invalidRefKeys = refKeys.filter(key => key !== 'default');
 
@@ -19,54 +21,41 @@ const SwitchExpr = ({ references, state, babel }) => {
   const processed = new Set();
   const refs = references.default;
 
-  let identifiers = null;
-
-  const collectIdentifiers = once(() => {
-    identifiers = new Set();
-    traverse(state.file.ast, {
-      Identifier(path) {
-        identifiers.add(path.node.name);
-      },
-    });
-  });
-
-  const isIdentifierPresent = name => {
-    collectIdentifiers();
-    return identifiers.has(name);
+  // Print well formatted errors
+  const failWith = (errCode, node, message) => {
+    if (node.loc) console.log(codeFrameColumns(code, node.loc, { message }));
+    const error = new Error(`ERR${errCode}: ${message}`);
+    error.code = `ERR${errCode}`;
+    throw error;
   };
 
   const processReference = (nodePath, references) => {
     if (processed.has(nodePath.node)) return;
     let parentPath = parentPathOf(nodePath);
     if (parentPath.node.type !== 'CallExpression') {
-      throw new MacroError(
-        `Expected Switch to be invoked as a function at ${stringifyLocStart(
-          parentPath.node.loc
-        )}`
+      failWith(
+        1,
+        parentPath.node,
+        'Expected Switch to be invoked as a function'
       );
     }
     const args = parentPath.node.arguments;
     ensureArgsProcessed(args, references);
     if (args.length !== 1) {
-      throw new MacroError(
-        `Expected Switch to have been invoked with a single argument at ${stringifyLocStart(
-          parentPath.node.loc
-        )}`
+      failWith(
+        2,
+        parentPath.node,
+        'Expected Switch to have been invoked with a single argument'
       );
     }
     let target = parentPath.node.arguments[0];
     let wrappedStatement = null;
     if (target.type.match(/Expression$/)) {
-      let id;
-      while (true) {
-        id = uniqueId('_switchTarget$');
-        debug('Checking for identifier:', id);
-        if (!isIdentifierPresent(id)) break;
-      }
+      const id = parentPath.scope.generateUidIdentifier('_switchTarget$');
       wrappedStatement = t.variableDeclaration('const', [
-        t.variableDeclarator(t.identifier(id), target),
+        t.variableDeclarator(id, target),
       ]);
-      target = t.identifier(id);
+      target = id;
     }
     let { topMostPath, resultExpr } = processChain(
       parentPath,
@@ -89,30 +78,26 @@ const SwitchExpr = ({ references, state, babel }) => {
 
   const parentPathOf = nodePath => nodePath.findParent(() => true);
 
-  const stringifyLocStart = loc => {
-    if (!loc || !loc.start) return '';
-    if (!loc.start.column) return `L${loc.start.line}`;
-    return `L${loc.start.line}C${loc.start.column}`;
-  };
-
   const processChain = (parentPath, target, references) => {
-    const branches = {
-      consequent: [],
-      alternate: [],
-    };
-
     let cases = [];
     let defaultCase = null;
 
     while (true) {
       const nextParentPath = parentPathOf(parentPath);
-      if (nextParentPath.node.type === 'MemberExpression') {
+      if (
+        t.isMemberExpression(nextParentPath.node) &&
+        nextParentPath.node.object === parentPath.node
+      ) {
         parentPath = nextParentPath;
         const memberNode = parentPath.node;
         const propName = memberNode.property.name;
         if (propName === 'case') {
           if (defaultCase)
-            throw new Error('Cases can not be added after default case');
+            failWith(
+              3,
+              nextParentPath.node,
+              'Cases can not be added after default case'
+            );
           parentPath = parentPathOf(parentPath);
           assertCallExpr(parentPath, propName);
           const args = parentPath.node.arguments;
@@ -121,47 +106,48 @@ const SwitchExpr = ({ references, state, babel }) => {
           cases.push(parentPath.node.arguments);
         } else if (propName === 'default') {
           if (defaultCase)
-            throw new Error('Default case has already been specified');
+            failWith(
+              4,
+              nextParentPath.node,
+              'Default case has already been specified'
+            );
           parentPath = parentPathOf(parentPath);
           assertCallExpr(parentPath, propName);
           const args = parentPath.node.arguments;
           ensureArgsProcessed(args, references);
           defaultCase = parentPath.node.arguments[0];
           debug('Encountered default case:', defaultCase);
-        } else if (propName === 'end') {
-          parentPath = parentPathOf(parentPath);
-          assertCallExpr(parentPath, propName);
-          return {
-            topMostPath: parentPath,
-            resultExpr: makeConditional(
-              cases,
-              defaultCase || t.identifier('undefined'),
-              target
-            ),
-          };
         } else {
-          throw new MacroError(
-            `Unexpected member invocation on Switch chain: ${propName} at ${stringifyLocStart(
-              memberNode.loc
-            )}`
+          failWith(
+            5,
+            memberNode,
+            'Unexpected member invocation on Switch chain'
           );
         }
+      } else if (
+        t.isCallExpression(nextParentPath.node) &&
+        nextParentPath.node.callee === parentPath.node
+      ) {
+        return {
+          topMostPath: nextParentPath,
+          resultExpr: makeConditional(
+            cases,
+            defaultCase || t.identifier('undefined'),
+            target
+          ),
+        };
       } else {
-        throw new Error(
-          `Expected the Switch-chain (started at ${stringifyLocStart(
-            parentPath.node.loc
-          )}) to have been terminated with an end`
-        );
+        failWith(6, parentPath.node, 'Unterminated Switch-chain');
       }
     }
   };
 
   const assertCallExpr = (parentPath, propName) => {
-    if (parentPath.node.type !== 'CallExpression') {
-      throw new MacroError(
-        `Expected member ${propName} to have been invoked as a function at ${stringifyLocStart(
-          parentPath.node.loc
-        )}`
+    if (!t.isCallExpression(parentPath.node)) {
+      failWith(
+        7,
+        parentPath.node,
+        `Expected member ${propName} to have been invoked as a function`
       );
     }
   };
@@ -175,31 +161,6 @@ const SwitchExpr = ({ references, state, babel }) => {
         t.binaryExpression('===', target, match),
         outcome,
         makeConditional(cases.slice(1), defaultCase, target)
-      );
-    }
-  };
-
-  const ensureSingleArg = (parentPath, propName) => {
-    if (parentPath.node.arguments.length !== 1) {
-      throw new MacroError(
-        `Expected member ${propName} to have been invoked with one argument at ${stringifyLocStart(
-          parentPath.node.loc
-        )}`
-      );
-    }
-    return parentPath.node.arguments[0];
-  };
-
-  const assertExprLike = (arg, parentPath, propName) => {
-    if (
-      arg.type !== 'Identifier' &&
-      !arg.type.match(/Expression$/) &&
-      !arg.type.match(/Literal$/)
-    ) {
-      throw new MacroError(
-        `Expected argument passed to ${propName} to have been an identifier, literal or expression at ${stringifyLocStart(
-          parentPath.node.loc
-        )}`
       );
     }
   };
