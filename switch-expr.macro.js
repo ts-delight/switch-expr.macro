@@ -1,4 +1,5 @@
 const { createMacro, MacroError } = require('babel-plugin-macros');
+const { codeFrameColumns } = require('@babel/code-frame');
 const pkgName = 'switch-expr.macro';
 const debug = require('debug')(pkgName);
 
