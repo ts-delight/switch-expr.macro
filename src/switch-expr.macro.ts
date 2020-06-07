@@ -26,14 +26,10 @@ export default createMacro(function SwitchExpr({ references, state }) {
   const refs = references.default;
 
   // Print well formatted errors
-  const failWith = (errCode: number, node: t.Node, message: string) => {
-    if (node.loc) console.log(codeFrameColumns(code, node.loc, { message }));
-    const qualifiedCode = `ERR:SwitchExpr:${errCode}`;
-    const error: Error & { code?: string } = new Error(
-      `${qualifiedCode}: ${message}`
-    );
-    error.code = qualifiedCode;
-    throw error;
+  const failWith = (node: t.Node, message: string) => {
+    if (node.loc)
+      throw new Error(codeFrameColumns(code, node.loc, { message }));
+    throw new Error(message);
   };
 
   const processReference = (
@@ -43,11 +39,7 @@ export default createMacro(function SwitchExpr({ references, state }) {
     if (processed.has(nodePath.node)) return;
     let parentPath = parentPathOf(nodePath);
     if (parentPath.node.type !== 'CallExpression') {
-      failWith(
-        1,
-        parentPath.node,
-        'Expected Switch to be invoked as a function'
-      );
+      failWith(parentPath.node, 'Expected Switch to be invoked as a function');
     }
     var callNode = parentPath.node as t.CallExpression;
     const args = callNode.arguments;
@@ -56,7 +48,6 @@ export default createMacro(function SwitchExpr({ references, state }) {
     ensureArgsProcessed(args, references);
     if (args.length !== 1) {
       failWith(
-        2,
         callNode,
         'Expected Switch to have been invoked with a single argument'
       );
@@ -113,7 +104,6 @@ export default createMacro(function SwitchExpr({ references, state }) {
         if (propName === 'case') {
           if (defaultCase)
             failWith(
-              3,
               nextParentPath.node,
               'Cases can not be added after default case'
             );
@@ -127,7 +117,6 @@ export default createMacro(function SwitchExpr({ references, state }) {
         } else if (propName === 'default') {
           if (defaultCase)
             failWith(
-              4,
               nextParentPath.node,
               'Default case has already been specified'
             );
@@ -139,11 +128,7 @@ export default createMacro(function SwitchExpr({ references, state }) {
           defaultCase = parentPath.node.arguments[0];
           debug('Encountered default case:', defaultCase);
         } else {
-          failWith(
-            5,
-            memberNode,
-            'Unexpected member invocation on Switch chain'
-          );
+          failWith(memberNode, 'Unexpected member invocation on Switch chain');
         }
       } else if (
         t.isCallExpression(nextParentPath.node) &&
@@ -161,7 +146,7 @@ export default createMacro(function SwitchExpr({ references, state }) {
           ),
         };
       } else {
-        failWith(6, parentPath.node, 'Unterminated Switch-chain');
+        failWith(parentPath.node, 'Unterminated Switch-chain');
       }
     }
   };
@@ -169,7 +154,6 @@ export default createMacro(function SwitchExpr({ references, state }) {
   function ensureExpression(node: t.Node): asserts node is t.Expression {
     if (!t.isExpression(node)) {
       failWith(
-        8,
         node,
         `Expected function argument to be an expression but found ${node.type} instead`
       );
@@ -190,7 +174,6 @@ export default createMacro(function SwitchExpr({ references, state }) {
   ): asserts node is t.CallExpression {
     if (!t.isCallExpression(node)) {
       failWith(
-        7,
         node,
         `Expected member ${propName} to have been invoked as a function`
       );
