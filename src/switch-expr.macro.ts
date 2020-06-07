@@ -1,17 +1,20 @@
-const { createMacro, MacroError } = require('babel-plugin-macros');
-const { codeFrameColumns } = require('@babel/code-frame');
-const pkgName = 'switch-expr.macro';
-const debug = require('debug')(pkgName);
+import { createMacro, MacroError } from 'babel-plugin-macros';
+import { codeFrameColumns } from '@babel/code-frame';
+import _debug from 'debug';
+import * as t from '@babel/types';
+import { NodePath } from '@babel/core';
+import { Node } from '@babel/traverse';
 
-const SwitchExpr = ({ references, state, babel }) => {
+const pkgName = 'switch-expr.macro';
+const debug = _debug(pkgName);
+
+export default createMacro(function SwitchExpr({ references, state }) {
   debug('Initial state:', state);
 
-  // Utilities to help with ast construction
-  const t = babel.types;
   // Complete source code if file
   const { code } = state.file;
   const refKeys = Object.keys(references);
-  const invalidRefKeys = refKeys.filter(key => key !== 'default');
+  const invalidRefKeys = refKeys.filter((key) => key !== 'default');
 
   if (invalidRefKeys.length > 0) {
     throw new MacroError(
@@ -23,14 +26,20 @@ const SwitchExpr = ({ references, state, babel }) => {
   const refs = references.default;
 
   // Print well formatted errors
-  const failWith = (errCode, node, message) => {
+  const failWith = (errCode: number, node: t.Node, message: string) => {
     if (node.loc) console.log(codeFrameColumns(code, node.loc, { message }));
-    const error = new Error(`ERR${errCode}: ${message}`);
-    error.code = `ERR${errCode}`;
+    const qualifiedCode = `ERR:SwitchExpr:${errCode}`;
+    const error: Error & { code?: string } = new Error(
+      `${qualifiedCode}: ${message}`
+    );
+    error.code = qualifiedCode;
     throw error;
   };
 
-  const processReference = (nodePath, references) => {
+  const processReference = (
+    nodePath: NodePath<Node>,
+    references: NodePath<Node>[]
+  ) => {
     if (processed.has(nodePath.node)) return;
     let parentPath = parentPathOf(nodePath);
     if (parentPath.node.type !== 'CallExpression') {
@@ -40,21 +49,25 @@ const SwitchExpr = ({ references, state, babel }) => {
         'Expected Switch to be invoked as a function'
       );
     }
-    const args = parentPath.node.arguments;
+    var callNode = parentPath.node as t.CallExpression;
+    const args = callNode.arguments;
+
+    ensureExpressionArr(args);
     ensureArgsProcessed(args, references);
     if (args.length !== 1) {
       failWith(
         2,
-        parentPath.node,
+        callNode,
         'Expected Switch to have been invoked with a single argument'
       );
     }
-    let target = parentPath.node.arguments[0];
+    let target = args[0];
     let wrappedStatement = null;
     if (target.type.match(/Expression$/)) {
+      var targetExpr = target as t.Expression;
       const id = parentPath.scope.generateUidIdentifier('_switchTarget$');
       wrappedStatement = t.variableDeclaration('const', [
-        t.variableDeclarator(id, target),
+        t.variableDeclarator(id, targetExpr),
       ]);
       target = id;
     }
@@ -77,10 +90,15 @@ const SwitchExpr = ({ references, state, babel }) => {
     processed.add(nodePath.node);
   };
 
-  const parentPathOf = nodePath => nodePath.findParent(() => true);
+  const parentPathOf = (nodePath: NodePath<Node>) =>
+    nodePath.findParent(() => true);
 
-  const processChain = (parentPath, target, references) => {
-    let cases = [];
+  const processChain = (
+    parentPath: NodePath<Node>,
+    target: t.Expression,
+    references: NodePath<Node>[]
+  ) => {
+    let cases: t.Expression[][] = [];
     let defaultCase = null;
 
     while (true) {
@@ -90,8 +108,8 @@ const SwitchExpr = ({ references, state, babel }) => {
         nextParentPath.node.object === parentPath.node
       ) {
         parentPath = nextParentPath;
-        const memberNode = parentPath.node;
-        const propName = memberNode.property.name;
+        const memberNode = parentPath.node as t.MemberExpression;
+        const propName: string = memberNode.property.name;
         if (propName === 'case') {
           if (defaultCase)
             failWith(
@@ -100,11 +118,12 @@ const SwitchExpr = ({ references, state, babel }) => {
               'Cases can not be added after default case'
             );
           parentPath = parentPathOf(parentPath);
-          assertCallExpr(parentPath, propName);
+          assertCallExpr(parentPath.node, propName);
           const args = parentPath.node.arguments;
+          ensureExpressionArr(args);
           ensureArgsProcessed(args, references);
-          debug('Encountered case:', parentPath.node.arguments);
-          cases.push(parentPath.node.arguments);
+          debug('Encountered case:', args);
+          cases.push(args);
         } else if (propName === 'default') {
           if (defaultCase)
             failWith(
@@ -113,8 +132,9 @@ const SwitchExpr = ({ references, state, babel }) => {
               'Default case has already been specified'
             );
           parentPath = parentPathOf(parentPath);
-          assertCallExpr(parentPath, propName);
+          assertCallExpr(parentPath.node, propName);
           const args = parentPath.node.arguments;
+          ensureExpressionArr(args);
           ensureArgsProcessed(args, references);
           defaultCase = parentPath.node.arguments[0];
           debug('Encountered default case:', defaultCase);
@@ -129,6 +149,9 @@ const SwitchExpr = ({ references, state, babel }) => {
         t.isCallExpression(nextParentPath.node) &&
         nextParentPath.node.callee === parentPath.node
       ) {
+        if (defaultCase) {
+          ensureExpression(defaultCase);
+        }
         return {
           topMostPath: nextParentPath,
           resultExpr: makeConditional(
@@ -143,17 +166,42 @@ const SwitchExpr = ({ references, state, babel }) => {
     }
   };
 
-  const assertCallExpr = (parentPath, propName) => {
-    if (!t.isCallExpression(parentPath.node)) {
+  function ensureExpression(node: t.Node): asserts node is t.Expression {
+    if (!t.isExpression(node)) {
+      failWith(
+        8,
+        node,
+        `Expected function argument to be an expression but found ${node.type} instead`
+      );
+    }
+  }
+
+  function ensureExpressionArr(
+    nodes: t.Node[]
+  ): asserts nodes is t.Expression[] {
+    for (const n of nodes) {
+      ensureExpression(n);
+    }
+  }
+
+  function assertCallExpr(
+    node: t.Node,
+    propName: string
+  ): asserts node is t.CallExpression {
+    if (!t.isCallExpression(node)) {
       failWith(
         7,
-        parentPath.node,
+        node,
         `Expected member ${propName} to have been invoked as a function`
       );
     }
-  };
+  }
 
-  const makeConditional = (cases, defaultCase, target) => {
+  const makeConditional = (
+    cases: t.Expression[][],
+    defaultCase: t.Expression,
+    target: t.Expression
+  ): t.Expression => {
     debug('Making conditional from: ', cases);
     if (cases.length === 0) return defaultCase;
     else {
@@ -166,11 +214,14 @@ const SwitchExpr = ({ references, state, babel }) => {
     }
   };
 
-  const ensureArgsProcessed = (args, references) => {
+  const ensureArgsProcessed = (
+    args: t.Expression[],
+    references: NodePath<t.Node>[]
+  ) => {
     for (const arg of args) {
       for (let i = 0; i < references.length; i++) {
         const nodePath = references[i];
-        const parent = nodePath.findParent(p => p.node === arg);
+        const parent = nodePath.findParent((p) => p.node === arg);
         if (!parent) continue;
         processReference(nodePath, references.slice(i + 1));
       }
@@ -181,6 +232,4 @@ const SwitchExpr = ({ references, state, babel }) => {
     const nodePath = refs[i];
     processReference(nodePath, refs.slice(i + 1));
   }
-};
-
-module.exports = createMacro(SwitchExpr);
+});

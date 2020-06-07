@@ -1,4 +1,4 @@
-import Switch from '../../switch-expr.macro';
+import Switch from '../../lib/switch-expr.macro';
 
 const fn = <T>(i: T) => i;
 

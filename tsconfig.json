@@ -9,5 +9,8 @@
         "experimentalDecorators": true,
         "noEmit": true,
         "outDir": "lib"
-    }
+    },
+    "exclude": [
+        "__specs__/**/*.ts"
+    ]
 }

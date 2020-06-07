@@ -2,7 +2,7 @@ import * as path from 'path';
 import { transformFileSync } from '@babel/core';
 
 test('Transformations', () => {
-  expect(transformFileSync(path.join(__dirname, '__fixtures__/index.ts'))!.code)
+  expect(transformFileSync(path.join(__dirname, 'fixtures/index.ts'))!.code)
     .toMatchInlineSnapshot(`
     "\\"use strict\\";
 
